@@ -1,36 +1,76 @@
-BITS 16          ; Tells the assembler we are in 16-bit mode
-ORG 0x7C00       ; The BIOS loads boot sector to this address
+[org 0x0000]    ; We load at 0x1000:0, but 'org' is 0 relative to that
+bits 16
 
-start:
-    cli              ; Disable interrupts
-    xor ax, ax       ; Zero AX
-    mov ds, ax       ; DS=0x0000
-    mov es, ax       ; ES=0x0000
-    mov ss, ax       ; SS=0x0000
-    mov sp, 0x7C00   ; Set stack pointer to 0x7C00
-    sti              ; Re-enable interrupts
-    
-    ; Print "Windows CE Crap Edition 5.0"
-    mov si, message
+use16
+
+start_kernel:
+    ; Print Kernel Message
+    mov si, kernelMsg
     call print_string
 
-halt:
-    hlt
-    jmp halt
+shell_loop:
+    ; Print shell prompt
+    mov si, shellPrompt
+    call print_string
 
+    ; Wait for keypress
+    call get_key
+
+    ; Check the character in AL
+    cmp al, 'd'
+    je go_desktop
+    cmp al, 'x'
+    je exit_shell
+
+    ; If it’s an unrecognized command, just echo something
+    mov si, unknownCmdMsg
+    call print_string
+
+    jmp shell_loop
+
+go_desktop:
+    mov si, desktopMsg
+    call print_string
+    jmp shell_loop
+
+exit_shell:
+    ; Hang
+    jmp $
+
+;--------------------------------
+; get_key: Waits for keypress
+; Returns ASCII in AL
+;--------------------------------
+get_key:
+    xor ah, ah
+    int 0x16     ; BIOS keyboard service
+    ret
+
+;--------------------------------
+; print_string: DS:SI => string
+; prints until encountering 0
+;--------------------------------
 print_string:
-    mov ah, 0x0E      ; BIOS teletype function
-next_char:
-    lodsb             ; Loads [SI] into AL and increments SI
-    cmp al, 0         ; Null terminator check
+    mov ah, 0x0E
+.print_char:
+    lodsb
+    cmp al, 0
     je .done
-    int 0x10          ; BIOS interrupt to print AL
-    jmp next_char
+    int 0x10
+    jmp .print_char
 .done:
     ret
 
-message:
-    db 'Windows CE Crap Edition 5.0', 13, 10, 0    ; String with CR, LF and null terminator
+;--------------------------------
+; Data
+;--------------------------------
+kernelMsg     db "Kernel started. Welcome to Windows CE Crap Edition 5.0!", 0x0D, 0x0A, 0
+shellPrompt   db "Shell> Press 'd' for Desktop, 'x' to Exit:", 0x0D, 0x0A, 0
+unknownCmdMsg db "Unknown command.", 0x0D, 0x0A, 0
+desktopMsg    db "Welcome to the Awesome Desktop!", 0x0D, 0x0A, 0
 
-times 510-($-$$) db 0   ; Pad with zeros until 510 bytes
-dw 0xAA55              ; Boot signature at bytes 511-512
+;--------------------------------
+; Pad so kernel can be multiple
+; sectors if needed
+;--------------------------------
+times 512*3-($-$$) db 0  ; Enough to fill 3 sectors (example)
